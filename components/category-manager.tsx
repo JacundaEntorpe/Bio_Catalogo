@@ -652,6 +652,7 @@ export function CategoryManager({ currentUserId, entryLeaves, initialTree }: Cat
                 <div className="graph-legend">
                   <span className="graph-legend__item graph-legend__item--selected">Selected</span>
                   <span className="graph-legend__item graph-legend__item--path">Path</span>
+                  <span className="graph-legend__item graph-legend__item--descendant-branch">Descendants</span>
                   <span className="graph-legend__item graph-legend__item--other">Other</span>
                 </div>
               </div>

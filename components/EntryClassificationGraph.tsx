@@ -73,6 +73,7 @@ export function EntryClassificationGraph({ currentCategoryId, currentEntryId, en
           </button>
           <div className="graph-legend">
             <span className="graph-legend__item graph-legend__item--current-entry">Entry atual</span>
+            <span className="graph-legend__item graph-legend__item--descendant-branch">Ramo descendente</span>
             <span className="graph-legend__item graph-legend__item--direct-leaf">Folha direta</span>
             <span className="graph-legend__item graph-legend__item--descendant-leaf">Folha descendente</span>
           </div>
