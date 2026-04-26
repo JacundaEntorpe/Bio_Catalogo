@@ -44,6 +44,7 @@ export function CategoryManager({ currentUserId, entryLeaves, initialTree }: Cat
   const [tree, setTree] = useState(initialTree);
   const [viewMode, setViewMode] = useState<CategoryViewMode>("tree");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [includeDescendantEntries, setIncludeDescendantEntries] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [createDraft, setCreateDraft] = useState<CategoryDraft>(emptyDraft);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -59,10 +60,11 @@ export function CategoryManager({ currentUserId, entryLeaves, initialTree }: Cat
       buildCategoryGraphData({
         entryLeaves,
         flatCategories,
+        includeDescendantEntries,
         selectedCategoryId,
         tree
       }),
-    [entryLeaves, flatCategories, selectedCategoryId, tree]
+    [entryLeaves, flatCategories, includeDescendantEntries, selectedCategoryId, tree]
   );
   const selectedCategory = useMemo(
     () => flatCategories.find((category) => category.id === selectedCategoryId) ?? null,
@@ -679,6 +681,13 @@ export function CategoryManager({ currentUserId, entryLeaves, initialTree }: Cat
                 </div>
                 <div className="graph-toolbar__controls stack-sm">
                   <div className="graph-control-row">
+                    <button
+                      className="button button--ghost button--small"
+                      onClick={() => setIncludeDescendantEntries((current) => !current)}
+                      type="button"
+                    >
+                      {includeDescendantEntries ? "Only direct entries" : "Include descendant entries"}
+                    </button>
                     <button className="button button--ghost button--small" onClick={() => graphViewRef.current?.zoomIn()} type="button">
                       Zoom in
                     </button>

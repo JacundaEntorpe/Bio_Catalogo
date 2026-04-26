@@ -32,11 +32,13 @@ export type CategoryGraphEdge = {
 export function buildCategoryGraphData({
   entryLeaves,
   flatCategories,
+  includeDescendantEntries = true,
   selectedCategoryId,
   tree
 }: {
   entryLeaves: CategoryGraphEntryLeaf[];
   flatCategories: Array<CategoryTreeItem & { depth: number }>;
+  includeDescendantEntries?: boolean;
   selectedCategoryId?: string | null;
   tree: CategoryTreeItem[];
 }) {
@@ -65,7 +67,9 @@ export function buildCategoryGraphData({
     };
   }
 
-  const selectedSubtreeIds = new Set(collectDescendantIds(tree, selectedCategoryId));
+  const selectedSubtreeIds = new Set(
+    includeDescendantEntries ? collectDescendantIds(tree, selectedCategoryId) : [selectedCategoryId]
+  );
   const entryNodes: CategoryGraphNode[] = entryLeaves
     .filter((entry) => selectedSubtreeIds.has(entry.categoryId))
     .map((entry) => ({
