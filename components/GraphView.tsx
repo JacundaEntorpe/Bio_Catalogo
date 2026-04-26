@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
 const ForceGraph2D: any = dynamic(() => import("react-force-graph-2d"), {
   ssr: false
@@ -31,6 +31,14 @@ type GraphViewProps = {
   edges: GraphViewEdge[];
   selectedNodeId?: string | null;
   onNodeSelect: (nodeId: string) => void;
+  isVisible?: boolean;
+};
+
+export type GraphViewHandle = {
+  focusNode: (nodeId: string) => void;
+  resetView: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 };
 
 type GraphLink = GraphViewEdge & {
@@ -43,7 +51,10 @@ function edgeKey(sourceId: string, targetId: string) {
   return `${sourceId}->${targetId}`;
 }
 
-export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphViewProps) {
+export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
+  { edges, nodes, onNodeSelect, selectedNodeId, isVisible = true },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const graphRef = useRef<any>();
   const [dimensions, setDimensions] = useState({ width: 920, height: 620 });
@@ -53,6 +64,37 @@ export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphV
     () => edges.map((edge) => ({ ...edge, id: edgeKey(edge.source, edge.target) })),
     [edges]
   );
+  const prominentNodeIds = useMemo(() => {
+    const labelLimit =
+      graphNodes.length > 140 ? 6 : graphNodes.length > 90 ? 8 : graphNodes.length > 45 ? 12 : 18;
+
+    return new Set(
+      [...graphNodes]
+        .sort((left, right) => {
+          const weightDifference = (right.childCount ?? 0) + (right.entryCount ?? 0) - ((left.childCount ?? 0) + (left.entryCount ?? 0));
+          if (weightDifference !== 0) {
+            return weightDifference;
+          }
+
+          return left.name.localeCompare(right.name);
+        })
+        .slice(0, labelLimit)
+        .map((node) => node.id)
+    );
+  }, [graphNodes]);
+  const layoutProfile = useMemo(() => {
+    const nodeCount = graphNodes.length;
+
+    return {
+      alphaDecay: nodeCount > 120 ? 0.02 : nodeCount > 60 ? 0.028 : 0.04,
+      chargeStrength: nodeCount > 120 ? -250 : nodeCount > 60 ? -205 : -165,
+      cooldownTicks: nodeCount > 120 ? 260 : nodeCount > 60 ? 210 : 150,
+      labelZoomThreshold: nodeCount > 120 ? 2.45 : nodeCount > 60 ? 2.05 : 1.55,
+      linkDistance: nodeCount > 120 ? 40 : nodeCount > 60 ? 52 : 74,
+      linkStrength: nodeCount > 120 ? 0.62 : nodeCount > 60 ? 0.72 : 0.9,
+      velocityDecay: nodeCount > 120 ? 0.34 : nodeCount > 60 ? 0.3 : 0.26
+    };
+  }, [graphNodes.length]);
 
   const highlightedNodeIds = useMemo(() => {
     if (!selectedNodeId) {
@@ -93,6 +135,43 @@ export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphV
     return ids;
   }, [nodes, selectedNodeId]);
 
+  const focusNodeById = useCallback((nodeId: string, zoomLevel = 2.1) => {
+    const targetNode = graphNodes.find((node) => node.id === nodeId);
+    if (!targetNode || typeof targetNode.x !== "number" || typeof targetNode.y !== "number") {
+      return;
+    }
+
+    graphRef.current?.centerAt(targetNode.x, targetNode.y, 600);
+    graphRef.current?.zoom(zoomLevel, 600);
+  }, [graphNodes]);
+
+  const resetView = useCallback(() => {
+    graphRef.current?.zoomToFit(700, graphNodes.length > 80 ? 120 : 80);
+  }, [graphNodes.length]);
+
+  const zoomBy = useCallback((multiplier: number) => {
+    const currentZoom = Number(graphRef.current?.zoom?.() ?? 1);
+    const nextZoom = Math.min(Math.max(currentZoom * multiplier, 0.45), 8);
+    graphRef.current?.zoom(nextZoom, 250);
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusNode: (nodeId: string) => {
+        focusNodeById(nodeId);
+      },
+      resetView,
+      zoomIn: () => {
+        zoomBy(1.22);
+      },
+      zoomOut: () => {
+        zoomBy(0.82);
+      }
+    }),
+    [focusNodeById, resetView, zoomBy]
+  );
+
   useEffect(() => {
     if (!containerRef.current) {
       return;
@@ -122,36 +201,44 @@ export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphV
       return;
     }
 
+    const chargeForce = graphRef.current.d3Force?.("charge");
+    const linkForce = graphRef.current.d3Force?.("link");
+
+    chargeForce?.strength?.(layoutProfile.chargeStrength);
+    linkForce?.distance?.(layoutProfile.linkDistance);
+    linkForce?.strength?.(layoutProfile.linkStrength);
+    graphRef.current.d3ReheatSimulation?.();
+  }, [graphLinks, graphNodes.length, layoutProfile]);
+
+  useEffect(() => {
+    if (!graphRef.current || graphNodes.length === 0 || !isVisible) {
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
-      graphRef.current?.zoomToFit(700, 80);
+      resetView();
     }, 120);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [graphLinks, graphNodes]);
+  }, [graphLinks, graphNodes.length, isVisible, resetView]);
 
   useEffect(() => {
-    if (!selectedNodeId) {
+    if (!selectedNodeId || !isVisible) {
       return;
     }
 
-    const targetNode = graphNodes.find((node) => node.id === selectedNodeId);
-    if (!targetNode || typeof targetNode.x !== "number" || typeof targetNode.y !== "number") {
-      return;
-    }
-
-    graphRef.current?.centerAt(targetNode.x, targetNode.y, 600);
-    graphRef.current?.zoom(2.1, 600);
-  }, [graphNodes, selectedNodeId]);
+    focusNodeById(selectedNodeId);
+  }, [focusNodeById, graphNodes, isVisible, selectedNodeId]);
 
   return (
     <div className="graph-view" ref={containerRef}>
       <ForceGraph2D
         backgroundColor={graphBackground}
-        cooldownTicks={140}
-        d3AlphaDecay={0.045}
-        d3VelocityDecay={0.26}
+        cooldownTicks={layoutProfile.cooldownTicks}
+        d3AlphaDecay={layoutProfile.alphaDecay}
+        d3VelocityDecay={layoutProfile.velocityDecay}
         enableNodeDrag
         enablePanInteraction
         enablePointerInteraction
@@ -177,9 +264,14 @@ export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphV
           const isSelected = node.id === selectedNodeId;
           const isInPath = highlightedNodeIds.has(node.id);
           const hasSelection = Boolean(selectedNodeId);
-          const radius = isSelected ? 8 : isInPath ? 6 : 4;
+          const nodeWeight = Math.min(4, (node.childCount ?? 0) * 0.22 + (node.entryCount ?? 0) * 0.08);
+          const radius = (isSelected ? 8 : isInPath ? 6 : 4) + nodeWeight;
           const fontSize = isSelected ? 14 : isInPath ? 12 : 10;
-          const shouldDrawLabel = isSelected || isInPath || globalScale > 1.55;
+          const shouldDrawLabel =
+            isSelected ||
+            isInPath ||
+            globalScale > layoutProfile.labelZoomThreshold ||
+            (!hasSelection && prominentNodeIds.has(node.id));
 
           context.save();
           context.beginPath();
@@ -212,19 +304,16 @@ export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphV
         nodePointerAreaPaint={(node: GraphViewNode, color: string, context: CanvasRenderingContext2D) => {
           context.fillStyle = color;
           context.beginPath();
-          context.arc(node.x ?? 0, node.y ?? 0, 12, 0, 2 * Math.PI, false);
+          context.arc(node.x ?? 0, node.y ?? 0, 15, 0, 2 * Math.PI, false);
           context.fill();
         }}
         onBackgroundClick={() => {
-          graphRef.current?.zoomToFit(700, 80);
+          resetView();
         }}
         onNodeClick={(node: GraphViewNode) => {
           onNodeSelect(node.id);
 
-          if (typeof node.x === "number" && typeof node.y === "number") {
-            graphRef.current?.centerAt(node.x, node.y, 700);
-            graphRef.current?.zoom(2.1, 700);
-          }
+          focusNodeById(node.id);
         }}
         onNodeDragEnd={(node: GraphViewNode) => {
           node.fx = node.x;
@@ -235,4 +324,6 @@ export function GraphView({ edges, nodes, onNodeSelect, selectedNodeId }: GraphV
       />
     </div>
   );
-}
+});
+
+GraphView.displayName = "GraphView";
