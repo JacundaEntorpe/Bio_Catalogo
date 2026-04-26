@@ -91,7 +91,7 @@ export default async function EntryDetailPage({ params }: EntryDetailPageProps) 
                 </Link>
               ))}
             </div>
-            <EntryClassificationGraph currentCategoryId={entry.categoryId} entryLeaves={entryLeaves} tree={categoryTree} />
+            <EntryClassificationGraph currentCategoryId={entry.categoryId} currentEntryId={entry.id} entryLeaves={entryLeaves} tree={categoryTree} />
           </section>
 
           <section className="stack-panel stack-sm">

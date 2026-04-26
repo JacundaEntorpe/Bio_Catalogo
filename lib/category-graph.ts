@@ -13,6 +13,7 @@ export type CategoryGraphNode = {
   parentId: string | null;
   categoryId?: string;
   entryId?: string;
+  entryRelation?: "direct" | "descendant";
   description?: string | null;
   ownerId?: string | null;
   entryCount?: number;
@@ -74,6 +75,7 @@ export function buildCategoryGraphData({
       parentId: entry.categoryId,
       categoryId: entry.categoryId,
       entryId: entry.id,
+      entryRelation: entry.categoryId === selectedCategoryId ? "direct" : "descendant",
       childCount: 0,
       entryCount: 0
     }));

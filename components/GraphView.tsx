@@ -13,6 +13,7 @@ type GraphViewProps = {
   nodes: CategoryGraphNode[];
   edges: CategoryGraphEdge[];
   selectedNodeId?: string | null;
+  currentEntryId?: string | null;
   onNodeSelect: (nodeId: string) => void;
   onEntrySelect?: (entryId: string) => void;
   isVisible?: boolean;
@@ -29,14 +30,20 @@ type GraphLink = CategoryGraphEdge & {
   id: string;
 };
 
+type GraphLinkRef = string | { id: string };
+
 const graphBackground = "#0f1614";
 
 function edgeKey(sourceId: string, targetId: string) {
   return `${sourceId}->${targetId}`;
 }
 
+function resolveLinkRefId(linkRef: GraphLinkRef) {
+  return typeof linkRef === "string" ? linkRef : linkRef.id;
+}
+
 export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
-  { edges, nodes, onEntrySelect, onNodeSelect, selectedNodeId, isVisible = true },
+  { currentEntryId, edges, nodes, onEntrySelect, onNodeSelect, selectedNodeId, isVisible = true },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -229,9 +236,21 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
         enableZoomInteraction
         graphData={{ links: graphLinks, nodes: graphNodes }}
         height={dimensions.height}
-        linkColor={(link: GraphLink) => {
+        linkColor={(link: GraphLink & { source: GraphLinkRef; target: GraphLinkRef }) => {
+          const targetId = resolveLinkRefId(link.target);
+          const targetNode = graphNodes.find((node) => node.id === targetId);
+          const isEntryLink = targetNode?.kind === "entry";
+
           if (highlightedEdgeIds.has(link.id)) {
             return "rgba(127, 221, 188, 0.92)";
+          }
+
+          if (isEntryLink && targetNode?.entryRelation === "direct") {
+            return selectedNodeId ? "rgba(224, 188, 119, 0.52)" : "rgba(224, 188, 119, 0.32)";
+          }
+
+          if (isEntryLink && targetNode?.entryRelation === "descendant") {
+            return selectedNodeId ? "rgba(114, 168, 214, 0.36)" : "rgba(114, 168, 214, 0.2)";
           }
 
           if (selectedNodeId) {
@@ -249,9 +268,11 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
           const isInPath = highlightedNodeIds.has(node.id);
           const hasSelection = Boolean(selectedNodeId);
           const isEntryNode = node.kind === "entry";
+          const isCurrentEntry = isEntryNode && node.entryId === currentEntryId;
+          const isDirectEntry = isEntryNode && node.entryRelation === "direct";
           const nodeWeight = isEntryNode ? 0 : Math.min(4, (node.childCount ?? 0) * 0.22 + (node.entryCount ?? 0) * 0.08);
-          const radius = (isEntryNode ? 4.8 : isSelected ? 8 : isInPath ? 6 : 4) + nodeWeight;
-          const fontSize = isEntryNode ? 10 : isSelected ? 14 : isInPath ? 12 : 10;
+          const radius = (isCurrentEntry ? 6.8 : isEntryNode ? 4.8 : isSelected ? 8 : isInPath ? 6 : 4) + nodeWeight;
+          const fontSize = isCurrentEntry ? 11 : isEntryNode ? 10 : isSelected ? 14 : isInPath ? 12 : 10;
           const shouldDrawLabel =
             isEntryNode ||
             isSelected ||
@@ -260,24 +281,58 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
             (!hasSelection && prominentNodeIds.has(node.id));
 
           context.save();
+
+          if (isCurrentEntry) {
+            context.beginPath();
+            context.arc(node.x ?? 0, node.y ?? 0, radius + 5.5, 0, 2 * Math.PI, false);
+            context.fillStyle = "rgba(244, 230, 183, 0.2)";
+            context.shadowColor = "rgba(244, 230, 183, 0.32)";
+            context.shadowBlur = 22;
+            context.fill();
+          }
+
           context.beginPath();
           context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI, false);
           context.fillStyle = isSelected
             ? "#f4e6b7"
+            : isCurrentEntry
+              ? "#f6ddb2"
             : isEntryNode
-              ? "rgba(224, 188, 119, 0.95)"
+              ? isDirectEntry
+                ? "rgba(224, 188, 119, 0.95)"
+                : "rgba(114, 168, 214, 0.95)"
             : isInPath
               ? "#7fddbc"
               : hasSelection
                 ? "rgba(178, 194, 188, 0.22)"
                 : "rgba(176, 209, 199, 0.86)";
-          context.shadowColor = isSelected ? "#f4e6b7" : isEntryNode ? "rgba(224, 188, 119, 0.7)" : isInPath ? "#7fddbc" : "transparent";
-          context.shadowBlur = isSelected || isInPath || isEntryNode ? 18 : 0;
+          context.shadowColor = isSelected
+            ? "#f4e6b7"
+            : isCurrentEntry
+              ? "rgba(246, 221, 178, 0.95)"
+              : isEntryNode
+                ? isDirectEntry
+                  ? "rgba(224, 188, 119, 0.7)"
+                  : "rgba(114, 168, 214, 0.72)"
+                : isInPath
+                  ? "#7fddbc"
+                  : "transparent";
+          context.shadowBlur = isSelected || isInPath || isEntryNode || isCurrentEntry ? 18 : 0;
           context.fill();
+
+          if (isCurrentEntry) {
+            context.lineWidth = 1.5 / globalScale;
+            context.strokeStyle = "rgba(252, 246, 227, 0.96)";
+            context.stroke();
+          }
 
           if (shouldDrawLabel) {
             context.font = `${fontSize / globalScale}px var(--font-ui), sans-serif`;
-            context.fillStyle = hasSelection && !isInPath ? "rgba(226, 235, 231, 0.3)" : "rgba(243, 247, 244, 0.92)";
+            context.fillStyle = isCurrentEntry
+              ? "rgba(252, 246, 227, 0.98)"
+              : hasSelection && !isInPath && !isEntryNode
+                ? "rgba(226, 235, 231, 0.3)"
+                : "rgba(243, 247, 244, 0.92)";
             context.textAlign = "center";
             context.textBaseline = "top";
             context.fillText(node.name, node.x ?? 0, (node.y ?? 0) + radius + 4);
@@ -287,7 +342,9 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
         }}
         nodeLabel={(node: CategoryGraphNode) => {
           if (node.kind === "entry") {
-            return `<div><strong>Entry</strong></div><div>${node.name}</div><div>Click to open the entry page</div>`;
+            const relationLabel = node.entryRelation === "direct" ? "Direct leaf of the selected node" : "Leaf from a descendant subcategory";
+            const currentLabel = node.entryId === currentEntryId ? "<div>Current entry</div>" : "";
+            return `<div><strong>Entry</strong></div><div>${node.name}</div><div>${relationLabel}</div>${currentLabel}<div>Click to open the entry page</div>`;
           }
 
           const description = node.description ? `<div>${node.description}</div>` : "";
