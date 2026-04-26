@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IdentificationStatus {
+  CONFIRMED
+  POSSIBLE
+  UNKNOWN
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String?
+  email        String        @unique
+  passwordHash String
+  avatarUrl    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  entries      Entry[]
+  categories   Category[]
+  observations Observation[]
+}
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  parentId    String?
+  ownerId     String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  owner       User?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryTree")
+  entries     Entry[]
+
+  @@index([parentId])
+  @@index([ownerId])
+}
+
+model Entry {
+  id                   String               @id @default(cuid())
+  ownerId              String
+  categoryId           String
+  name                 String?
+  description          String
+  identificationStatus IdentificationStatus @default(UNKNOWN)
+  locationText         String?
+  habitatText          String?
+  habitatTags          String[]
+  behaviorText         String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  owner                User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  category             Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images               Image[]
+  observations         Observation[]
+
+  @@index([ownerId])
+  @@index([categoryId])
+  @@index([identificationStatus])
+}
+
+model Image {
+  id          String   @id @default(cuid())
+  entryId      String
+  fileName     String
+  storagePath  String
+  altText      String?
+  caption      String?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  entry        Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+}
+
+model Observation {
+  id           String   @id @default(cuid())
+  entryId       String
+  observerId    String?
+  title         String?
+  notes         String
+  observedAt    DateTime @default(now())
+  locationText  String?
+  habitatTags   String[]
+  behaviorText  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  entry         Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  observer      User?    @relation(fields: [observerId], references: [id], onDelete: SetNull)
+
+  @@index([entryId])
+  @@index([observerId])
+  @@index([observedAt])
+}
