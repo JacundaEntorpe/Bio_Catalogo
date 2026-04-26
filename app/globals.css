@@ -603,6 +603,21 @@ textarea {
   color: var(--muted);
 }
 
+.graph-meta__path-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.graph-meta__path-link--active,
+.graph-meta__path-link:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 .graph-meta__path-button {
   display: inline-flex;
   align-items: center;
@@ -655,6 +670,23 @@ textarea {
   transform: translateY(-1px);
   border-color: rgba(47, 109, 86, 0.28);
   background: rgba(47, 109, 86, 0.08);
+}
+
+.entry-classification-graph {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.entry-classification-graph .graph-view {
+  min-height: 420px;
+}
+
+.entry-classification-graph__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .category-editor__grid {

@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 
 import { BookGallery } from "@/components/book-gallery";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { EntryClassificationGraph } from "@/components/EntryClassificationGraph";
 import { StatusBadge } from "@/components/status-badge";
 import { findCategoryPath } from "@/lib/category-tree";
-import { getCategoryTreeData, getEntryById } from "@/lib/catalog";
+import { getCategoryTreeData, getEntryById, getGraphEntries } from "@/lib/catalog";
 import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,10 @@ type EntryDetailPageProps = {
 };
 
 export default async function EntryDetailPage({ params }: EntryDetailPageProps) {
-  const [entry, categoryTree, currentUser] = await Promise.all([
+  const [entry, categoryTree, entryLeaves, currentUser] = await Promise.all([
     getEntryById(params.id),
     getCategoryTreeData(),
+    getGraphEntries(),
     getCurrentUser()
   ]);
 
@@ -89,6 +91,7 @@ export default async function EntryDetailPage({ params }: EntryDetailPageProps) 
                 </Link>
               ))}
             </div>
+            <EntryClassificationGraph currentCategoryId={entry.categoryId} entryLeaves={entryLeaves} tree={categoryTree} />
           </section>
 
           <section className="stack-panel stack-sm">

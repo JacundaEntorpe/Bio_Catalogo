@@ -3,34 +3,18 @@
 import dynamic from "next/dynamic";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
+import type { CategoryGraphEdge, CategoryGraphNode } from "@/lib/category-graph";
+
 const ForceGraph2D: any = dynamic(() => import("react-force-graph-2d"), {
   ssr: false
 });
 
-export type GraphViewNode = {
-  id: string;
-  name: string;
-  parentId: string | null;
-  description?: string | null;
-  ownerId?: string | null;
-  entryCount?: number;
-  childCount?: number;
-  x?: number;
-  y?: number;
-  fx?: number;
-  fy?: number;
-};
-
-export type GraphViewEdge = {
-  source: string;
-  target: string;
-};
-
 type GraphViewProps = {
-  nodes: GraphViewNode[];
-  edges: GraphViewEdge[];
+  nodes: CategoryGraphNode[];
+  edges: CategoryGraphEdge[];
   selectedNodeId?: string | null;
   onNodeSelect: (nodeId: string) => void;
+  onEntrySelect?: (entryId: string) => void;
   isVisible?: boolean;
 };
 
@@ -41,7 +25,7 @@ export type GraphViewHandle = {
   zoomOut: () => void;
 };
 
-type GraphLink = GraphViewEdge & {
+type GraphLink = CategoryGraphEdge & {
   id: string;
 };
 
@@ -52,7 +36,7 @@ function edgeKey(sourceId: string, targetId: string) {
 }
 
 export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function GraphView(
-  { edges, nodes, onNodeSelect, selectedNodeId, isVisible = true },
+  { edges, nodes, onEntrySelect, onNodeSelect, selectedNodeId, isVisible = true },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -260,14 +244,16 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
         linkDirectionalParticleColor={() => "rgba(236, 244, 228, 0.86)"}
         linkDirectionalParticleSpeed={0.008}
         linkWidth={(link: GraphLink) => (highlightedEdgeIds.has(link.id) ? 2.4 : selectedNodeId ? 0.6 : 1)}
-        nodeCanvasObject={(node: GraphViewNode, context: CanvasRenderingContext2D, globalScale: number) => {
+        nodeCanvasObject={(node: CategoryGraphNode, context: CanvasRenderingContext2D, globalScale: number) => {
           const isSelected = node.id === selectedNodeId;
           const isInPath = highlightedNodeIds.has(node.id);
           const hasSelection = Boolean(selectedNodeId);
-          const nodeWeight = Math.min(4, (node.childCount ?? 0) * 0.22 + (node.entryCount ?? 0) * 0.08);
-          const radius = (isSelected ? 8 : isInPath ? 6 : 4) + nodeWeight;
-          const fontSize = isSelected ? 14 : isInPath ? 12 : 10;
+          const isEntryNode = node.kind === "entry";
+          const nodeWeight = isEntryNode ? 0 : Math.min(4, (node.childCount ?? 0) * 0.22 + (node.entryCount ?? 0) * 0.08);
+          const radius = (isEntryNode ? 4.8 : isSelected ? 8 : isInPath ? 6 : 4) + nodeWeight;
+          const fontSize = isEntryNode ? 10 : isSelected ? 14 : isInPath ? 12 : 10;
           const shouldDrawLabel =
+            isEntryNode ||
             isSelected ||
             isInPath ||
             globalScale > layoutProfile.labelZoomThreshold ||
@@ -278,13 +264,15 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
           context.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI, false);
           context.fillStyle = isSelected
             ? "#f4e6b7"
+            : isEntryNode
+              ? "rgba(224, 188, 119, 0.95)"
             : isInPath
               ? "#7fddbc"
               : hasSelection
                 ? "rgba(178, 194, 188, 0.22)"
                 : "rgba(176, 209, 199, 0.86)";
-          context.shadowColor = isSelected ? "#f4e6b7" : isInPath ? "#7fddbc" : "transparent";
-          context.shadowBlur = isSelected || isInPath ? 18 : 0;
+          context.shadowColor = isSelected ? "#f4e6b7" : isEntryNode ? "rgba(224, 188, 119, 0.7)" : isInPath ? "#7fddbc" : "transparent";
+          context.shadowBlur = isSelected || isInPath || isEntryNode ? 18 : 0;
           context.fill();
 
           if (shouldDrawLabel) {
@@ -297,25 +285,38 @@ export const GraphView = forwardRef<GraphViewHandle, GraphViewProps>(function Gr
 
           context.restore();
         }}
-        nodeLabel={(node: GraphViewNode) => {
+        nodeLabel={(node: CategoryGraphNode) => {
+          if (node.kind === "entry") {
+            return `<div><strong>Entry</strong></div><div>${node.name}</div><div>Click to open the entry page</div>`;
+          }
+
           const description = node.description ? `<div>${node.description}</div>` : "";
           return `<div><strong>${node.name}</strong></div><div>${node.entryCount ?? 0} entries · ${node.childCount ?? 0} children</div>${description}`;
         }}
-        nodePointerAreaPaint={(node: GraphViewNode, color: string, context: CanvasRenderingContext2D) => {
+        nodePointerAreaPaint={(node: CategoryGraphNode, color: string, context: CanvasRenderingContext2D) => {
           context.fillStyle = color;
           context.beginPath();
-          context.arc(node.x ?? 0, node.y ?? 0, 15, 0, 2 * Math.PI, false);
+          context.arc(node.x ?? 0, node.y ?? 0, node.kind === "entry" ? 12 : 15, 0, 2 * Math.PI, false);
           context.fill();
         }}
         onBackgroundClick={() => {
           resetView();
         }}
-        onNodeClick={(node: GraphViewNode) => {
+        onNodeClick={(node: CategoryGraphNode) => {
+          if (node.kind === "entry" && node.entryId) {
+            onEntrySelect?.(node.entryId);
+            return;
+          }
+
           onNodeSelect(node.id);
 
           focusNodeById(node.id);
         }}
-        onNodeDragEnd={(node: GraphViewNode) => {
+        onNodeDragEnd={(node: CategoryGraphNode) => {
+          if (node.kind === "entry") {
+            return;
+          }
+
           node.fx = node.x;
           node.fy = node.y;
         }}

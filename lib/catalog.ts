@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 
+import type { CategoryGraphEntryLeaf } from "@/lib/category-graph";
 import { buildCategoryTree, collectDescendantIds, type CategoryTreeItem } from "@/lib/category-tree";
 import { prisma } from "@/lib/prisma";
 
@@ -60,6 +61,23 @@ export async function getEntries(categoryId?: string) {
     },
     orderBy: [{ updatedAt: "desc" }]
   });
+}
+
+export async function getGraphEntries(): Promise<CategoryGraphEntryLeaf[]> {
+  const entries = await prisma.entry.findMany({
+    select: {
+      id: true,
+      name: true,
+      categoryId: true
+    },
+    orderBy: [{ updatedAt: "desc" }]
+  });
+
+  return entries.map((entry) => ({
+    id: entry.id,
+    name: entry.name ?? "Unnamed specimen",
+    categoryId: entry.categoryId
+  }));
 }
 
 export async function getEntryById(id: string) {

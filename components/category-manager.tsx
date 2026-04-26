@@ -1,13 +1,15 @@
 "use client";
 
-import { GraphView, type GraphViewEdge, type GraphViewHandle, type GraphViewNode } from "@/components/GraphView";
+import { GraphView, type GraphViewHandle } from "@/components/GraphView";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
+import { buildCategoryGraphData, type CategoryGraphEntryLeaf } from "@/lib/category-graph";
 import { collectDescendantIds, findCategoryPath, flattenCategoryTree, type CategoryTreeItem } from "@/lib/category-tree";
 
 type CategoryManagerProps = {
+  entryLeaves: CategoryGraphEntryLeaf[];
   initialTree: CategoryTreeItem[];
   currentUserId?: string;
 };
@@ -34,7 +36,7 @@ function normalizeDraft(draft: CategoryDraft) {
   };
 }
 
-export function CategoryManager({ currentUserId, initialTree }: CategoryManagerProps) {
+export function CategoryManager({ currentUserId, entryLeaves, initialTree }: CategoryManagerProps) {
   const router = useRouter();
   const graphViewRef = useRef<GraphViewHandle | null>(null);
   const graphHotkeysRef = useRef<HTMLDivElement | null>(null);
@@ -52,28 +54,15 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const flatCategories = useMemo(() => flattenCategoryTree(tree), [tree]);
-  const graphNodes = useMemo<GraphViewNode[]>(
+  const graphData = useMemo(
     () =>
-      flatCategories.map((category) => ({
-        id: category.id,
-        name: category.name,
-        parentId: category.parentId,
-        description: category.description,
-        ownerId: category.ownerId,
-        entryCount: category.entryCount,
-        childCount: category.childCount
-      })),
-    [flatCategories]
-  );
-  const graphEdges = useMemo<GraphViewEdge[]>(
-    () =>
-      flatCategories
-        .filter((category) => Boolean(category.parentId))
-        .map((category) => ({
-          source: category.parentId!,
-          target: category.id
-        })),
-    [flatCategories]
+      buildCategoryGraphData({
+        entryLeaves,
+        flatCategories,
+        selectedCategoryId,
+        tree
+      }),
+    [entryLeaves, flatCategories, selectedCategoryId, tree]
   );
   const selectedCategory = useMemo(
     () => flatCategories.find((category) => category.id === selectedCategoryId) ?? null,
@@ -710,9 +699,10 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
               </div>
               <div className="graph-hotkey-surface" onKeyDown={handleGraphKeyDown} onPointerDown={() => graphHotkeysRef.current?.focus()} ref={graphHotkeysRef} tabIndex={0}>
               <GraphView
-                edges={graphEdges}
+                edges={graphData.edges}
                 isVisible={viewMode === "graph"}
-                nodes={graphNodes}
+                nodes={graphData.nodes}
+                onEntrySelect={(entryId) => router.push(`/entries/${entryId}`)}
                 onNodeSelect={setSelectedCategoryId}
                 ref={graphViewRef}
                 selectedNodeId={selectedCategoryId}
