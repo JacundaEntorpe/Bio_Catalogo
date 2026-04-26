@@ -590,6 +590,10 @@ textarea {
   background: rgba(178, 194, 188, 0.55);
 }
 
+.graph-legend__item--descendant-branch::before {
+  background: rgba(106, 209, 151, 0.9);
+}
+
 .graph-legend__item--current-entry::before {
   background: #f6ddb2;
   box-shadow: 0 0 0 2px rgba(252, 246, 227, 0.72);
