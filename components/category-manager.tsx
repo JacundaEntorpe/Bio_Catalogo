@@ -1,10 +1,11 @@
 "use client";
 
+import { GraphView, type GraphViewEdge, type GraphViewNode } from "@/components/GraphView";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import { collectDescendantIds, flattenCategoryTree, type CategoryTreeItem } from "@/lib/category-tree";
+import { collectDescendantIds, findCategoryPath, flattenCategoryTree, type CategoryTreeItem } from "@/lib/category-tree";
 
 type CategoryManagerProps = {
   initialTree: CategoryTreeItem[];
@@ -23,6 +24,8 @@ const emptyDraft: CategoryDraft = {
   parentId: ""
 };
 
+type CategoryViewMode = "tree" | "graph";
+
 function normalizeDraft(draft: CategoryDraft) {
   return {
     name: draft.name.trim(),
@@ -34,6 +37,8 @@ function normalizeDraft(draft: CategoryDraft) {
 export function CategoryManager({ currentUserId, initialTree }: CategoryManagerProps) {
   const router = useRouter();
   const [tree, setTree] = useState(initialTree);
+  const [viewMode, setViewMode] = useState<CategoryViewMode>("tree");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CategoryDraft>(emptyDraft);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<CategoryDraft>(emptyDraft);
@@ -41,7 +46,44 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
-  const flatCategories = flattenCategoryTree(tree);
+  const flatCategories = useMemo(() => flattenCategoryTree(tree), [tree]);
+  const graphNodes = useMemo<GraphViewNode[]>(
+    () =>
+      flatCategories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        parentId: category.parentId,
+        description: category.description,
+        ownerId: category.ownerId,
+        entryCount: category.entryCount,
+        childCount: category.childCount
+      })),
+    [flatCategories]
+  );
+  const graphEdges = useMemo<GraphViewEdge[]>(
+    () =>
+      flatCategories
+        .filter((category) => Boolean(category.parentId))
+        .map((category) => ({
+          source: category.parentId!,
+          target: category.id
+        })),
+    [flatCategories]
+  );
+  const selectedCategory = useMemo(
+    () => flatCategories.find((category) => category.id === selectedCategoryId) ?? null,
+    [flatCategories, selectedCategoryId]
+  );
+  const selectedPath = useMemo(
+    () => (selectedCategoryId ? findCategoryPath(tree, selectedCategoryId) : []),
+    [selectedCategoryId, tree]
+  );
+
+  useEffect(() => {
+    if (selectedCategoryId && !flatCategories.some((category) => category.id === selectedCategoryId)) {
+      setSelectedCategoryId(null);
+    }
+  }, [flatCategories, selectedCategoryId]);
 
   async function refreshCategories() {
     const response = await fetch("/api/categories", { cache: "no-store" });
@@ -144,6 +186,7 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
     setEditingCategoryId(null);
     setErrorMessage(null);
     setCreatingParentId(parentId ?? "root");
+    setSelectedCategoryId(parentId ?? null);
     setCreateDraft({
       ...emptyDraft,
       parentId: parentId ?? ""
@@ -154,6 +197,7 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
     setCreatingParentId(null);
     setErrorMessage(null);
     setEditingCategoryId(category.id);
+    setSelectedCategoryId(category.id);
     setEditDraft({
       name: category.name,
       description: category.description ?? "",
@@ -246,9 +290,10 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
         {nodes.map((node) => {
           const canEdit = currentUserId === node.ownerId;
           const deleteBlocked = node.childCount > 0 || node.entryCount > 0;
+          const isSelected = selectedCategoryId === node.id;
 
           return (
-            <article className="stack category-card" id={node.slug} key={node.id}>
+            <article className={isSelected ? "stack category-card category-card--selected" : "stack category-card"} id={node.slug} key={node.id}>
               <div className="stack-sm">
                 <span className="eyebrow">Category</span>
                 <h2>{node.name}</h2>
@@ -260,6 +305,9 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
                 <span className="chip">{node.ownerId ? (canEdit ? "Your branch" : "User branch") : "Shared branch"}</span>
               </div>
               <div className="hero__actions">
+                <button className="button button--ghost button--small" onClick={() => setSelectedCategoryId(node.id)} type="button">
+                  {isSelected ? "Selected" : "Select"}
+                </button>
                 <Link className="button button--ghost button--small" href={`/?categoryId=${node.id}`}>
                   Filter entries
                 </Link>
@@ -297,6 +345,72 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
     );
   }
 
+  function renderSelectedCategoryPanel() {
+    if (!selectedCategory) {
+      return (
+        <section className="graph-meta stack">
+          <span className="eyebrow">Selection</span>
+          <h2>Select a category node.</h2>
+          <p>Click any node in the graph or use Select in the card view to inspect its path and available actions.</p>
+        </section>
+      );
+    }
+
+    const canEdit = currentUserId === selectedCategory.ownerId;
+    const deleteBlocked = selectedCategory.childCount > 0 || selectedCategory.entryCount > 0;
+
+    return (
+      <section className="graph-meta stack">
+        <span className="eyebrow">Selected category</span>
+        <h2>{selectedCategory.name}</h2>
+        <p>{selectedCategory.description ?? "No description yet for this branch."}</p>
+        <div className="chip-row">
+          <span className="chip">{selectedCategory.entryCount} entries</span>
+          <span className="chip">{selectedCategory.childCount} children</span>
+          <span className="chip">{selectedCategory.ownerId ? (canEdit ? "Your branch" : "User branch") : "Shared branch"}</span>
+        </div>
+        <div className="graph-meta__path">
+          {selectedPath.map((category, index) => (
+            <span className="graph-meta__path-item" key={category.id}>
+              <span>{category.name}</span>
+              {index < selectedPath.length - 1 ? <span className="graph-meta__path-separator">/</span> : null}
+            </span>
+          ))}
+        </div>
+        <div className="hero__actions">
+          <Link className="button button--ghost button--small" href={`/?categoryId=${selectedCategory.id}`}>
+            Filter entries
+          </Link>
+          {currentUserId ? (
+            <button className="button button--ghost button--small" onClick={() => openCreate(selectedCategory.id)} type="button">
+              Add child
+            </button>
+          ) : null}
+          {canEdit ? (
+            <button className="button button--ghost button--small" onClick={() => openEdit(selectedCategory)} type="button">
+              Edit
+            </button>
+          ) : null}
+          {canEdit ? (
+            <button
+              className="button button--ghost button--small"
+              disabled={busyKey === `delete:${selectedCategory.id}` || deleteBlocked}
+              onClick={() => deleteCategory(selectedCategory)}
+              type="button"
+            >
+              {busyKey === `delete:${selectedCategory.id}` ? "Deleting..." : "Delete"}
+            </button>
+          ) : null}
+        </div>
+        {deleteBlocked && canEdit ? (
+          <p className="form-hint">Delete is available only when the category has no direct entries and no child categories.</p>
+        ) : null}
+        {editingCategoryId === selectedCategory.id ? renderForm("edit", selectedCategory.id) : null}
+        {creatingParentId === selectedCategory.id ? renderForm("create") : null}
+      </section>
+    );
+  }
+
   return (
     <div className="stack-lg">
       {currentUserId ? (
@@ -316,9 +430,58 @@ export function CategoryManager({ currentUserId, initialTree }: CategoryManagerP
         <div className="empty-state">Sign in to create personal category branches or edit categories you own.</div>
       )}
 
-      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+      <section className="category-view-panel stack">
+        <div className="category-view-header">
+          <div className="stack-sm">
+            <span className="eyebrow">View mode</span>
+            <p className="form-hint">Switch between the current card layout and a force-directed graph map of the taxonomy tree.</p>
+          </div>
+          <div className="view-toggle" role="tablist" aria-label="Category view mode">
+            <button
+              aria-selected={viewMode === "tree"}
+              className={viewMode === "tree" ? "view-toggle__button view-toggle__button--active" : "view-toggle__button"}
+              onClick={() => setViewMode("tree")}
+              role="tab"
+              type="button"
+            >
+              Tree view
+            </button>
+            <button
+              aria-selected={viewMode === "graph"}
+              className={viewMode === "graph" ? "view-toggle__button view-toggle__button--active" : "view-toggle__button"}
+              onClick={() => setViewMode("graph")}
+              role="tab"
+              type="button"
+            >
+              Graph View
+            </button>
+          </div>
+        </div>
 
-      {renderBranch(tree)}
+        {viewMode === "graph" ? (
+          <div className="graph-shell">
+            <section className="graph-panel stack-sm">
+              <div className="graph-panel__header">
+                <div className="stack-sm">
+                  <span className="eyebrow">Graph map</span>
+                  <p className="form-hint">Drag nodes, pan the canvas, zoom in or out, and click a node to highlight its full path back to the root.</p>
+                </div>
+                <div className="graph-legend">
+                  <span className="graph-legend__item graph-legend__item--selected">Selected</span>
+                  <span className="graph-legend__item graph-legend__item--path">Path</span>
+                  <span className="graph-legend__item graph-legend__item--other">Other</span>
+                </div>
+              </div>
+              <GraphView edges={graphEdges} nodes={graphNodes} onNodeSelect={setSelectedCategoryId} selectedNodeId={selectedCategoryId} />
+            </section>
+            {renderSelectedCategoryPanel()}
+          </div>
+        ) : (
+          renderBranch(tree)
+        )}
+      </section>
+
+      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
     </div>
   );
 }
